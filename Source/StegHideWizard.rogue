@@ -1,0 +1,124 @@
+#================================================================================
+# StegHideWizard.rogue
+# November 28, 2024
+#================================================================================
+
+$define VERSION "1.0"
+$define DATE    "November 28, 2024"
+
+$requireRogue "2.34.3"
+
+uses Console/CommandLineParser
+uses Graphics
+uses Graphics/BitmapIO
+
+try
+  StegHideWizard( System.command_line_arguments )
+catch (error:Error)
+  Console.error.println error
+  System.exit 1
+endTry
+
+class StegHideWizard
+  METHODS
+    method init( args:String[] )
+      local command = parse_args( args )
+
+      #trace command
+      # has //options and possibly //args
+
+      if (command//options//help)
+        print_usage
+        System.exit 0
+      endIf
+
+      run_wizard( System.find_executable("steghide") )
+
+    method run_wizard( steghide_exe:String )
+      if (not steghide_exe)
+        throw Error( "Cannot find 'steghide' executable. Install and re-run this wizard." )
+      endIf
+
+      local w = Console.width
+      print   "┌"
+      print   "─" * (w-2)
+      println "┐"
+
+      print   "│"
+      print   "StegHide Wizard".justified(-(w-2))
+      println "│"
+
+      print   "└"
+      print   "─" * (w-2)
+      println "┘"
+
+      local img_filepath = Console.input(
+        "Drag and drop an image file in into this window and press [ENTER].\n> ".word_wrapped(w) )
+      if (img_filepath) img_filepath .= trimmed
+      if (not String.exists(img_filepath)) throw Error( "No image specified - aborting." )
+
+      local img_file = File(img_filepath)
+      if (not img_file.exists) throw Error( "Cannot access specified image file - aborting." )
+      #{
+      local img = Bitmap( img_file )
+      if (img.error)
+        throw Error( "Unable to load image - aborting." )
+      endIf
+      println "$ is a $x$ image."(img_file.filename,img.width,img.height)
+      println
+      }#
+
+      local temp_filepath : String
+      if (System.is_windows) temp_filepath = "%TEMP%/steghide-message.txt"
+      else                   temp_filepath = "/tmp/steghide-message.txt"
+      local temp_file = File(temp_filepath)
+      temp_file.delete
+
+      println "Checking for an existing message..."
+      if (execute( "steghide extract -p '' -sf $ -xf $"(img_file.esc,temp_file.esc),&suppress_error))
+        println
+        println "$ contains the following stegonographic message:"(img_file.filename)
+        println String(temp_file)
+        println
+        return
+      else
+        println
+      endIf
+
+    method parse_args( args:String[] )->Variant
+      local command = CommandLineParser().
+      [
+        option( "--help",     &aliases=["-h","-?"] )
+      ].parse( args )
+      return command
+
+    method print_usage
+      println "StegHideWizard v$"(VERSION)
+      println "$"(DATE)
+      println
+
+      println @|USAGE
+               |  steghidewizard [OPTIONS]
+               |
+               |OPTIONS
+               |  --help, -h, -?
+               |    Show this help text.
+endClass
+
+routine execute( commands:String, error_message=null:String, &suppress_error )->Logical
+  forEach (cmd in LineReader(commands))
+    ConsoleStyle.set<<FG_LIGHT_GREEN>>
+    print( "> " )
+    println( cmd )
+    ConsoleStyle.set<<FG_DEFAULT>>
+    if (0 != System.run(cmd))
+      if (suppress_error)
+        return false
+      else
+        if (not error_message) error_message = "Build failed."
+        throw Error( error_message )
+      endIf
+    endIf
+  endForEach
+  return true
+endRoutine
